@@ -11,7 +11,7 @@ double guessp(double dl, double ul, double pl, double cl, double dr, double ur, 
 void starpu(double &p, double &u, double dl, double ul, double pl, double cl, double dr, double ur, double pr, double cr);
 
 void nonlinear_solver(int numcells, double *R, double *U, double *P, double *dss, double *uss, double *pss);
-void linear_solver(int numcells, double *R, double *U, double *P, double *dss, double *uss, double *pss, double** LOOP_TIME, int last);
+void linear_solver(int numcells, double *R, double *U, double *P, double *dss, double *uss, double *pss);
 void flux_count(FILE* *array_flux, int iter, int numcells, double timer, double tau, double *t, double *UFLUX);
 void boundary_conditions(int numcells, double *dss, double *uss, double *pss, double *R, double *U, double *P);
 void mem_alloc(int numcells, double **arr, int align);
@@ -48,7 +48,7 @@ void file_n_smooth_steps(int numcells, double timer, double tau, double *x_layer
 void null_array(double *arr, int a, int b);
 void null_array(int *arr, int a, int b);
 void set_bound(FILE *plot, int i);
-void output_last_step(int numcells, double dx, double D_analit, double *R, double *U, double *P);
+void output_last_step(int numcells, double* x, int rank, double *R, double *U, double *P);
 
 
 // Gnuplot

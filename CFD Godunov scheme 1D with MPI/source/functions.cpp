@@ -9,17 +9,15 @@ processing results of the computations
 ****************************************/
 
 /* SIMD linear solver */
-void linear_solver(int numcells, double* R, double* U, double* P, double* dss, double* uss, double* pss, double** LOOP_TIME, int last)
+void linear_solver(int numcells, double* R, double* U, double* P, double* dss, double* uss, double* pss)
 {
 	double wtime = 0;
 	double *C = new double[numcells];
 	double *RC = new double[numcells];
 	double *H = new double[numcells];
 
-#pragma omp parallel private(wtime)
+#pragma omp parallel
 	{
-		wtime = omp_get_wtime();
-
 #pragma omp for simd schedule(simd:static) // schedule(dynamic,64) 
 		for (int i = 1; i < numcells; i++)
 		{
@@ -57,9 +55,6 @@ void linear_solver(int numcells, double* R, double* U, double* P, double* dss, d
 			}
 
 		}
-		wtime = omp_get_wtime() - wtime;
-		LOOP_TIME[2][omp_get_thread_num()] += wtime;
-		if (last) printf("Time taken by thread %d is %f\n", omp_get_thread_num(), LOOP_TIME[2][omp_get_thread_num()]);
 	}
 
 	delete[] RC;
@@ -231,6 +226,34 @@ void flux_count(FILE* *array_flux, int iter, int numcells, double timer, double 
 		}
 	}
 		//t[i] = (t_ind[i] + 0.5)*dx - UFLUX[t_ind[i]] * timer;
+}
+
+void output_last_step(int numcells, double* x, int rank, double *R, double *U, double *P)
+{
+	double us, cs, ps, ds, ss;
+	char FileName[255];
+	FILE *fout;
+
+	sprintf(FileName, "r%d_N%04d_P%1d_SLV%1d_TERM%.0lf.dat", rank, numcells, PROBLEM, RUNGE_KUTTA, A_TERM*K_TERM);
+	fout = fopen(FileName, "w");
+
+	for (int i = 0; i < numcells; i++)
+	{
+
+		/********************************************************************************************************************************
+		| 1 |    2    |   3   |     4    |          5        |         6       |      7      |          8        |      9       |   10  |
+		| x | density | speed | pressure | velocity of sound |       entropy   |      term    |	                 |   pg/pg_max  | h_pow |
+		********************************************************************************************************************************/
+		ds = R[i];
+		us = U[i];
+		ps = P[i];
+		cs = sqrt(GAMMA*P[i] / R[i]);
+		ss = log(P[i] / pow(R[i], GAMMA));
+
+		fprintf(fout, "%9.6lf %lf %lf %lf %lf %lf \n", x[i], ds, us, ps, cs, ss);
+
+	}
+	fclose(fout);
 }
 
 /**************************************************
@@ -1588,10 +1611,10 @@ void outline_integral_riemann(int numcells, double timer, double tau, double tt1
 		check2 = 0;
 	}
 
-	int OMP_CORES = omp_get_max_threads();
+	//int OMP_CORES = omp_get_max_threads();
 
 	double dx = LENGTH / double(numcells);
-	int omp_chuck = numcells / OMP_CORES;
+//	int omp_chuck = numcells / OMP_CORES;
 
 	if (timer >= tt1 && timer <= tt2)
 	{
@@ -1622,7 +1645,7 @@ void outline_integral_riemann(int numcells, double timer, double tau, double tt1
 	if (timer >= tt1 && check1 == 0)
 	{
 
-#pragma omp parallel for reduction(+:sum_b_M,sum_b_I,sum_b_S,sum_b_E) schedule(guided) num_threads(OMP_CORES)
+#pragma omp parallel for reduction(+:sum_b_M,sum_b_I,sum_b_S,sum_b_E) schedule(guided)
 		for (int i = 0; i < numcells; i++)
 		{
 			if (xx[i] >= xx1 && xx[i] <= xx2)
@@ -1640,7 +1663,7 @@ void outline_integral_riemann(int numcells, double timer, double tau, double tt1
 
 	if (timer >= tt2 && check2 == 0)
 	{
-#pragma omp parallel for reduction(+:sum_t_M,sum_t_I,sum_t_S,sum_t_E) schedule(guided) num_threads(OMP_CORES)
+#pragma omp parallel for reduction(+:sum_t_M,sum_t_I,sum_t_S,sum_t_E) schedule(guided)
 		for (int i = 0; i < numcells; i++)
 		{
 			if (xx[i] >= xx1 && xx[i] <= xx2)

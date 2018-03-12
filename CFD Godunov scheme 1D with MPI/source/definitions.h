@@ -19,6 +19,7 @@ to enable the respective job.
 #include <time.h>
 #include <sys/types.h>
 #include <omp.h>
+#include <mpi.h>
 #include <xmmintrin.h>
 
 /************** MACRO ****************/
@@ -26,7 +27,7 @@ to enable the respective job.
 // 1) General preprocessor definition
 
 //#define PRINT printf("Printing with GNUPLOT is set up\n");
-#define OUTPUT_N_SMOOTH printf("Output to several files. One file = one layer")
+//#define OUTPUT_N_SMOOTH printf("Output to several files. One file = one layer")
 //#define INTEGRAL printf("Computation of accuracy via using counter integrals")
 
 #if (PROBLEM < 3 || PROBLEM == 7 || PROBLEM == 4)

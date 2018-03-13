@@ -69,12 +69,14 @@ int main(int argc, char* argv[])
 	MPI_Get_processor_name(node_name, &node_name_length);
 	printf("%s\n", node_name); fflush(0);
 
+#ifdef _OPENMP
 	/* Read omp threads from the environment */
 	int OMP_CORES = omp_get_max_threads();
 
 	/* Chunk for OMP threading */
 	int omp_chunk = numcells / OMP_CORES;
-
+#endif
+	
 	/* Domain */
 	len = LENGTH;
 	dx = len / double(numcells);	// step 

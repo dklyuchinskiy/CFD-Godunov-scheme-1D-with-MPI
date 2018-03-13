@@ -8,7 +8,6 @@ MPI implementation of 1D Godunov scheme for fluid dynamics
 
 int main(int argc, char* argv[])
 {
-	MPI_File fh;
 	MPI_Init(&argc, &argv);
 
 	int rank, size;
@@ -29,21 +28,15 @@ int main(int argc, char* argv[])
 
 	double *uss, *pss, *dss;			// gas values on the boundaries
 	double *x_init, *x_n, *x_n1;		// coordinates
-	double* u_max_array;
-
-	double start, duration;
+	double *u_max_array;
 
 	int iter = 0, count = 0;
 	bool last = false;
 
-	double timer, time_max, tau, dx, dtdx, len, x, x_NC, wtime, CFL;
-	double ds = 0, us = 0, ps = 0, es = 0, es_diff = 0, cs = 0;
+	double timer, time_max, tau, dx, dtdx, len, x, CFL;
 	double u1 = 0, u2 = 0, u3 = 0, u_loc = 0, u_max = 0;
-	double D_analit = 0;
-	double delta_ro, delta_u, delta_p;
-	double start_t = 0, end_t = 0;
+	double start_t = 0, end_t = 0, duration = 0;
 	double loop_time = 0, bound_time = 0, cfl_time = 0;
-
 
 	/* For HALO MPI */
 	double left_cell[3], right_cell[3];
@@ -87,12 +80,24 @@ int main(int argc, char* argv[])
 	dx = len / double(numcells);	// step 
 
 	/* Create arrays */
-
 	int loc_num = numcells / size;
 	int rem = numcells % size;
+	int stride1 = loc_num;
+	int stride2 = 0;
+	int r1 = rank;
+	int r2 = 0;
 
-	if (rem != 0 && rank >= size / 2) loc_num += 1;
-
+	/* Set correct stride for dividing the computational
+	domain if there is a reminder */
+	if (rem != 0 && rank >= size / 2)
+	{
+		loc_num += 1;
+		r1 = size / 2;
+		r2 = rank - r1;
+		stride1 = loc_num - 1;
+		stride2 = loc_num;
+	}
+	
 	mem_alloc(loc_num, &R, 32);
 	mem_alloc(loc_num, &P, 32);
 	mem_alloc(loc_num, &U, 32);
@@ -120,16 +125,16 @@ int main(int argc, char* argv[])
 
 	/* Mesh */
 #pragma omp for simd schedule(simd:static)
-	for (int i = 0; i < loc_num; i++)
-	{
-		x_init[i] = (rank * loc_num + i + 0.5)*dx;          // that are middles of cells
-		x_n[i] = x_init[i];
-	}
+		for (int i = 0; i < loc_num; i++)
+		{
+			x_init[i] = (r1 * stride1 + r2 * stride2 + i + 0.5)*dx;          // that are middles of cells
+			x_n[i] = x_init[i];
+		}
 
 	/* Initial conditions */
 	if (rank == 0) printf("Loop 0\n"); fflush(0);
-#pragma omp parallel num_threads(OMP_CORES)
-	{
+#pragma omp parallel
+	{ 
 #pragma omp for simd schedule(simd:static)
 		for (int i = 0; i < loc_num; i++)
 		{
@@ -139,10 +144,9 @@ int main(int argc, char* argv[])
 		}
 	}
 
-
 	/* Computation of RU and RE */
 	if (rank == 0) printf("Loop 1\n"); fflush(0);
-#pragma omp parallel num_threads(OMP_CORES)
+#pragma omp parallel
 	{
 #pragma omp for simd schedule(simd:static)
 		for (int i = 0; i < loc_num; i++)
@@ -161,7 +165,7 @@ int main(int argc, char* argv[])
 	{
 		iter++;
 		
-#pragma omp parallel firstprivate(u1,u2,u3,u_loc) shared(u_max) num_threads(OMP_CORES)
+#pragma omp parallel firstprivate(u1,u2,u3,u_loc) shared(u_max)
 		{
 			/* CFL condition */
 #pragma omp for schedule(static, omp_chunk) nowait
@@ -179,31 +183,28 @@ int main(int argc, char* argv[])
 			if (u_loc > u_max) u_max = u_loc;
 		}
 
-		// Gather all u_max at rank 0
+		/* Gather all u_max at rank 0 */
 		MPI_Gather(&u_max, 1, MPI_DOUBLE, u_max_array, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-		// Handling u_max at rank 0
+		/* Handling u_max at rank 0 */
 		if (rank == 0)
 		{
 			for (int i = 0; i < size; i++)
 				u_max = max(u_max_array[i], u_max);
 		}
 
-		// Send u_max to the same variable at other processes
+		/* Send u_max to the same variable at other processes */
 		MPI_Bcast(&u_max, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD); 
-
 		
-#ifdef CFL_SWITCH
-		CFL = timer < time_max / 2 ? CFL08 : CFL04;
-		tau = CFL*dx / u_max;
-#else
-		tau = CFL04*dx / u_max;
-#endif
 
+		/* Set time step via CFL number */
+		tau = CFL04*dx / u_max;
+
+		/* Handling the last time step */
 		if (timer + tau > time_max)
 		{
 			tau = time_max - timer; // if the last time's step is bigger than distance to "time_max"
-			last = true;			// set last time step
+			last = true;	
 		}
 		dtdx = tau / dx;
 
@@ -268,6 +269,7 @@ int main(int argc, char* argv[])
 				FRE[i] = (pss[i] / (GAMMA - 1.0) + 0.5*dss[i] * uss[i] * uss[i])*uss[i] + pss[i] * uss[i];
 			}
 		}
+
 		/* Euler coordinates */
 #pragma omp parallel for simd schedule(simd:static)
 		for (int i = 0; i < loc_num; i++)
@@ -286,7 +288,6 @@ int main(int argc, char* argv[])
 				RU[i] = RU[i] - dtdx * (FRU[i + 1] - FRU[i]);
 				RE[i] = RE[i] - dtdx * (FRE[i + 1] - FRE[i]);
 			}
-
 		}
 
 		/* Over-computation of velocity, pressure and entropy */
@@ -302,6 +303,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
+		/* Addition to timer */
 		timer += tau;
 
 		/* Euler coordinates */
@@ -336,11 +338,9 @@ int main(int argc, char* argv[])
 	mem_free(&uss);
 	mem_free(&pss);
 
-
 	mem_free(&x_n1);
 	mem_free(&x_n);
 	mem_free(&x_init);
-
 
 	if (rank == 0) printf("\nSUCCESS!\nElapsed time: %lf sec\n", duration);
 	

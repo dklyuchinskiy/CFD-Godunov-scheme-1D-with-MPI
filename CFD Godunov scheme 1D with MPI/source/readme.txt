@@ -14,5 +14,14 @@ Before running, set the number (n) of OpenMP threads with command:
 set OMP_NUM_THREADS=n (for Windows)
 export OMP_NUM_THREADS=n (for Linux)
 
+The measured performance on Intel(R) Xeon(R) CPU E5-2630 v4 @ 2.20GHz:
+
+24300 points of the grid. 1 node. OpenMP is disabled.
+
+1 proc - 56.7 sec
+2 proc - 22.9 sec
+4 proc - 12.1 sec
+8 proc - 7.2 sec
+
 
 Please, ask your questions at dmitriy_klyuchinskiy@mail.ru

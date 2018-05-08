@@ -44,11 +44,34 @@ int main(int argc, char* argv[])
 	MPI_Status statuses[3];
 	MPI_Request requests[3];
 
+	// Make a window
+	MPI_Win win[3];
+
+	double *boundaries_R = (double*)malloc(2 * sizeof(double));
+	double *boundaries_U = (double*)malloc(2 * sizeof(double));
+	double *boundaries_P = (double*)malloc(2 * sizeof(double));
+
+	MPI_Comm comm_sm;
+	int size_comm_sm;
+
+	MPI_Win_allocate_shared((MPI_Aint)(2 * sizeof(double)), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &boundaries_R, &win[0]);
+	MPI_Win_allocate_shared((MPI_Aint)(2 * sizeof(double)), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &boundaries_U, &win[1]);
+	MPI_Win_allocate_shared((MPI_Aint)(2 * sizeof(double)), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &boundaries_P, &win[2]);
+
+
+	MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &comm_sm);
+	MPI_Comm_size(comm_sm, &size_comm_sm);
+
+	if (size_comm_sm != size)
+	{
+		printf("Not on one shared memory node \n");
+		MPI_Abort(MPI_COMM_WORLD, 0);
+	}
 
 	/*** Start ***/
 
 	/* Set number of cells */
-	int numcells = 300;
+	int numcells = 24300;
 
 	if (rank == 0)
 	{
@@ -166,7 +189,9 @@ int main(int argc, char* argv[])
 	while (timer < time_max)
 	{
 		iter++;
-		
+
+		//if (rank == 0) printf("timer: %lf\n", timer); fflush(0);
+	
 #pragma omp parallel firstprivate(u1,u2,u3,u_loc) shared(u_max)
 		{
 			/* CFL condition */
@@ -231,6 +256,7 @@ int main(int argc, char* argv[])
 		int right = rank + 1;
 		int left = rank - 1;
 
+#ifndef SHARED_HALO
 		// Messages should have the same tag!!!
 		if (rank < size - 1)
 		{
@@ -257,7 +283,38 @@ int main(int argc, char* argv[])
 		
 			linear(left_cell[0], left_cell[1], left_cell[2], R[0], U[0], P[0], dss[0], uss[0], pss[0]);	
 		}
-		
+#else
+
+		MPI_Win_fence(0, win[0]);
+		MPI_Win_fence(0, win[1]);
+		MPI_Win_fence(0, win[2]);
+
+		if (rank < size - 1)
+		{
+			*(boundaries_R + 2) = R[loc_num - 1];
+			*(boundaries_U + 2) = U[loc_num - 1];
+			*(boundaries_P + 2) = P[loc_num - 1];
+		}	
+		if (rank > 0)
+		{
+			*(boundaries_R - 1) = R[0];
+			*(boundaries_U - 1) = U[0];
+			*(boundaries_P - 1) = P[0];
+		}
+
+		MPI_Win_fence(0, win[0]);
+		MPI_Win_fence(0, win[1]);
+		MPI_Win_fence(0, win[2]);
+
+		if (rank < size - 1)
+		{
+			linear(R[loc_num - 1], U[loc_num - 1], P[loc_num - 1], boundaries_R[1], boundaries_U[1], boundaries_P[1], dss[loc_num], uss[loc_num], pss[loc_num]);
+		}
+		if (rank > 0)
+		{
+			linear(boundaries_R[0], boundaries_U[0], boundaries_P[0], R[0], U[0], P[0], dss[0], uss[0], pss[0]);
+		}
+#endif
 		/* Computation of flux variables */
 		if (last && rank == 0) printf("Loop 3\n"); fflush(0);
 #pragma omp parallel
@@ -345,6 +402,10 @@ int main(int argc, char* argv[])
 	mem_free(&x_init);
 
 	if (rank == 0) printf("\nSUCCESS!\nElapsed time: %lf sec\n", duration);
+
+	MPI_Win_free(&win[0]);
+	MPI_Win_free(&win[1]);
+	MPI_Win_free(&win[2]);
 	
 	MPI_Finalize();
 	return 0;

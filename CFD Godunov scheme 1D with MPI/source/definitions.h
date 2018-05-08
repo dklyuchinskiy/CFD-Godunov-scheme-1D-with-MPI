@@ -34,6 +34,8 @@ to enable the respective job.
 //#define FLUX_COUNT
 #endif
 
+#define SHARED_HALO
+
 #ifdef INTEGRAL
 #define RUNGE
 #undef PRINT
